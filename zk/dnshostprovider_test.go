@@ -16,11 +16,8 @@ func localhostLookupHost(host string) ([]string, error) {
 // TestDNSHostProviderCreate is just like TestCreate, but with an
 // overridden HostProvider that ignores the provided hostname.
 func TestDNSHostProviderCreate(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	t.Parallel()
+	ts := defaultTestCluster(t)
 
 	port := ts.Servers[0].Port
 	server := fmt.Sprintf("foo.example.com:%d", port)
@@ -31,7 +28,7 @@ func TestDNSHostProviderCreate(t *testing.T) {
 	}
 	defer zk.Close()
 
-	path := "/gozk-test"
+	path := "/TestDNSHostProviderCreate-gozk-test"
 
 	if err := zk.Delete(path, -1); err != nil && err != ErrNoNode {
 		t.Fatalf("Delete returned error: %+v", err)

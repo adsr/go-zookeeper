@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +19,7 @@ const (
 	_testMyIDFileName = "myid"
 )
 
-func NewIntegrationTestServer(t *testing.T, configPath string, stdout, stderr io.Writer) (*server, error) {
+func NewIntegrationTestServer(t tSimple, configPath string, stdout, stderr io.Writer) (*server, error) {
 	// allow external systems to configure this zk server bin path.
 	zkPath := os.Getenv("ZOOKEEPER_BIN_PATH")
 	if zkPath == "" {
@@ -53,9 +55,9 @@ type TestCluster struct {
 	Servers []TestServer
 }
 
-func StartTestCluster(t *testing.T, size int, stdout, stderr io.Writer) (*TestCluster, error) {
+func StartTestCluster(t tSimple, size int, stdout, stderr io.Writer) (*TestCluster, error) {
 	if testing.Short() {
-		t.Skip("ZK clsuter tests skipped in short case.")
+		t.Skip("ZK cluster tests skipped in short case.")
 	}
 	tmpPath, err := ioutil.TempDir("", "gozk")
 	requireNoError(t, err, "failed to create tmp dir for test server setup")
@@ -258,9 +260,44 @@ func (tc *TestCluster) StopAllServers() error {
 	return nil
 }
 
-func requireNoError(t *testing.T, err error, msgAndArgs ...interface{}) {
+func requireNoError(t tSimple, err error, msgAndArgs ...interface{}) {
+	t.Helper()
 	if err != nil {
 		t.Logf("received unexpected error: %v", err)
 		t.Fatal(msgAndArgs...)
 	}
+}
+
+// Create a simple interface to emulate just enough of the T struct
+// to be used during setup when no T struct is available.
+type tSimple interface {
+	Skip(args ...interface{})
+	Helper()
+	Logf(format string, args ...interface{})
+	Fatal(args ...interface{})
+	Fatalf(format string, args ...interface{})
+}
+
+type tSetup struct{}
+
+func (ts *tSetup) Skip(args ...interface{}) {
+	log.Println(args...)
+	runtime.Goexit()
+}
+
+// Ignore stack labeling here as it is unnecessary.
+func (ts *tSetup) Helper() {}
+
+func (ts *tSetup) Logf(format string, args ...interface{}) {
+	log.Printf(format, args...)
+}
+
+func (ts *tSetup) Fatal(args ...interface{}) {
+	log.Println(args...)
+	os.Exit(1)
+}
+
+func (ts *tSetup) Fatalf(format string, args ...interface{}) {
+	log.Printf(format, args...)
+	os.Exit(1)
 }

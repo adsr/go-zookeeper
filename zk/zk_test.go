@@ -3,6 +3,7 @@ package zk
 import (
 	"context"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -20,12 +21,54 @@ import (
 	"time"
 )
 
-func TestStateChanges(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
+var _defaultTestCluster *TestCluster
+
+func defaultTestCluster(t tSimple) *TestCluster {
+	if testing.Short() {
+		t.Skip("ZK cluster tests skipped in short case.")
 	}
-	defer ts.Stop()
+	return _defaultTestCluster
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	ts := &tSetup{}
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		setup(ts)
+	}()
+	wg.Wait()
+	retCode := m.Run()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		teardown(ts)
+	}()
+	wg.Wait()
+	os.Exit(retCode)
+}
+
+func setup(t tSimple) {
+	tc, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
+	if err != nil {
+		t.Fatalf("failed starting default cluster: %s", err)
+	}
+	_defaultTestCluster = tc
+}
+
+func teardown(t tSimple) {
+	if _defaultTestCluster == nil {
+		return
+	}
+	if err := _defaultTestCluster.Stop(); err != nil {
+		t.Logf("failed stopping default cluster: %s", err)
+	}
+}
+
+func TestStateChanges(t *testing.T) {
+	ts := defaultTestCluster(t)
 
 	callbackChan := make(chan Event)
 	f := func(event Event) {
@@ -67,18 +110,15 @@ func TestStateChanges(t *testing.T) {
 }
 
 func TestCreate(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	ts := defaultTestCluster(t)
+
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
 	}
 	defer zk.Close()
 
-	path := "/gozk-test"
+	path := "/TestCreate-gozk-test"
 	path2 := path + "2"
 
 	if err := zk.Delete(path, -1); err != nil && err != ErrNoNode {
@@ -125,18 +165,14 @@ func TestCreate(t *testing.T) {
 }
 
 func TestOpsAfterCloseDontDeadlock(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	ts := defaultTestCluster(t)
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
 	}
 	zk.Close()
 
-	path := "/gozk-test"
+	path := "/TestOpsAfterCloseDontDeadlock-gozk-test"
 
 	ch := make(chan struct{})
 	go func() {
@@ -302,18 +338,15 @@ func TestReconfig(t *testing.T) {
 }
 
 func TestMulti(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	ts := defaultTestCluster(t)
+
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
 	}
 	defer zk.Close()
 
-	path := "/gozk-test"
+	path := "/TestMulti-gozk-test"
 
 	if err := zk.Delete(path, -1); err != nil && err != ErrNoNode {
 		t.Fatalf("Delete returned error: %+v", err)
@@ -339,6 +372,7 @@ func TestMulti(t *testing.T) {
 }
 
 func TestIfAuthdataSurvivesReconnect(t *testing.T) {
+	t.Parallel()
 	// This test case ensures authentication data is being resubmited after
 	// reconnect.
 	testNode := "/auth-testnode"
@@ -393,14 +427,11 @@ func TestIfAuthdataSurvivesReconnect(t *testing.T) {
 func TestMultiFailures(t *testing.T) {
 	// This test case ensures that we return the errors associated with each
 	// opeThis in the event a call to Multi() fails.
-	const firstPath = "/gozk-test-first"
-	const secondPath = "/gozk-test-second"
+	const firstPath = "/TestMultiFailures-gozk-test-first"
+	const secondPath = "/TestMultiFailures-gozk-test-second"
 
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	ts := defaultTestCluster(t)
+
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
@@ -439,11 +470,8 @@ func TestMultiFailures(t *testing.T) {
 }
 
 func TestGetSetACL(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	ts := defaultTestCluster(t)
+
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
@@ -454,15 +482,15 @@ func TestGetSetACL(t *testing.T) {
 		t.Fatalf("AddAuth returned error %+v", err)
 	}
 
-	path := "/gozk-test"
+	path := "/TestGetSetACL-gozk-test"
 
 	if err := zk.Delete(path, -1); err != nil && err != ErrNoNode {
 		t.Fatalf("Delete returned error: %+v", err)
 	}
-	if path, err := zk.Create(path, []byte{1, 2, 3, 4}, 0, WorldACL(PermAll)); err != nil {
+	if createdPath, err := zk.Create(path, []byte{1, 2, 3, 4}, 0, WorldACL(PermAll)); err != nil {
 		t.Fatalf("Create returned error: %+v", err)
-	} else if path != "/gozk-test" {
-		t.Fatalf("Create returned different path '%s' != '/gozk-test'", path)
+	} else if createdPath != path {
+		t.Fatalf("Create returned different path '%s' != '%s'", createdPath, path)
 	}
 
 	expected := WorldACL(PermAll)
@@ -493,18 +521,14 @@ func TestGetSetACL(t *testing.T) {
 }
 
 func TestAuth(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	ts := defaultTestCluster(t)
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
 	}
 	defer zk.Close()
 
-	path := "/gozk-digest-test"
+	path := "/TestAuth-gozk-digest-test"
 	if err := zk.Delete(path, -1); err != nil && err != ErrNoNode {
 		t.Fatalf("Delete returned error: %+v", err)
 	}
@@ -543,11 +567,8 @@ func TestAuth(t *testing.T) {
 }
 
 func TestChildren(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	t.Parallel()
+	ts := defaultTestCluster(t)
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
@@ -596,11 +617,7 @@ func TestChildren(t *testing.T) {
 }
 
 func TestChildWatch(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	ts := defaultTestCluster(t)
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
@@ -667,11 +684,8 @@ func TestChildWatch(t *testing.T) {
 }
 
 func TestSetWatchers(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	t.Parallel()
+	ts := defaultTestCluster(t)
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
@@ -810,11 +824,7 @@ func TestSetWatchers(t *testing.T) {
 }
 
 func TestExpiringWatch(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	ts := defaultTestCluster(t)
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
@@ -854,11 +864,7 @@ func TestDisconnectOnSessionExpiration(t *testing.T) {
 	// This test case ensures that client doesn't reconnect on session expiration.
 	testNode := "/expiration-testnode"
 
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	ts := defaultTestCluster(t)
 
 	zk, eventChan, err := ts.ConnectWithOptions(15*time.Second, CloseOnSessionExpiration(true))
 	if err != nil {
@@ -921,11 +927,7 @@ func TestRequestFail(t *testing.T) {
 }
 
 func TestRequestFailAfterClosed(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	ts := defaultTestCluster(t)
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
@@ -948,6 +950,7 @@ func TestIdempotentClose(t *testing.T) {
 }
 
 func TestSlowServer(t *testing.T) {
+	t.Parallel()
 	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
 	if err != nil {
 		t.Fatal(err)
@@ -1007,11 +1010,7 @@ func TestSlowServer(t *testing.T) {
 }
 
 func TestMaxBufferSize(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	ts := defaultTestCluster(t)
 	// no buffer size
 	zk, _, err := ts.ConnectWithOptions(15 * time.Second)
 	var l testLogger

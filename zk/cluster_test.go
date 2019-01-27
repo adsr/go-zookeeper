@@ -7,7 +7,7 @@ import (
 )
 
 type logWriter struct {
-	t *testing.T
+	t tSimple
 	p string
 }
 
@@ -17,6 +17,7 @@ func (lw logWriter) Write(b []byte) (int, error) {
 }
 
 func TestBasicCluster(t *testing.T) {
+	t.Parallel()
 	ts, err := StartTestCluster(t, 3, nil, logWriter{t: t, p: "[ZKERR] "})
 	if err != nil {
 		t.Fatal(err)
@@ -33,8 +34,6 @@ func TestBasicCluster(t *testing.T) {
 	}
 	defer zk2.Close()
 
-	time.Sleep(time.Second * 5)
-
 	if _, err := zk1.Create("/gozk-test", []byte("foo-cluster"), 0, WorldACL(PermAll)); err != nil {
 		t.Fatalf("Create failed on node 1: %+v", err)
 	}
@@ -48,6 +47,7 @@ func TestBasicCluster(t *testing.T) {
 
 // If the current leader dies, then the session is reestablished with the new one.
 func TestClientClusterFailover(t *testing.T) {
+	t.Parallel()
 	tc, err := StartTestCluster(t, 3, nil, logWriter{t: t, p: "[ZKERR] "})
 	if err != nil {
 		t.Fatal(err)
@@ -87,9 +87,10 @@ func TestClientClusterFailover(t *testing.T) {
 	}
 }
 
-// If a ZooKeeper cluster looses quorum then a session is reconnected as soon
+// If a ZooKeeper cluster loses quorum then a session is reconnected as soon
 // as the quorum is restored.
 func TestNoQuorum(t *testing.T) {
+	t.Parallel()
 	tc, err := StartTestCluster(t, 3, nil, logWriter{t: t, p: "[ZKERR] "})
 	if err != nil {
 		t.Fatal(err)
@@ -186,11 +187,8 @@ func TestNoQuorum(t *testing.T) {
 }
 
 func TestWaitForClose(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	t.Parallel()
+	ts := defaultTestCluster(t)
 	zk, _, err := ts.Connect(0)
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)
@@ -222,11 +220,8 @@ CONNECTED:
 }
 
 func TestBadSession(t *testing.T) {
-	ts, err := StartTestCluster(t, 1, nil, logWriter{t: t, p: "[ZKERR] "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Stop()
+	t.Parallel()
+	ts := defaultTestCluster(t)
 	zk, _, err := ts.ConnectAll()
 	if err != nil {
 		t.Fatalf("Connect returned error: %+v", err)

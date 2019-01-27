@@ -35,6 +35,7 @@ func TestSimpleDNSHostProviderRetryStart(t *testing.T) {
 // remaps addresses to localhost:$PORT combinations corresponding to
 // the test ZooKeeper instances.
 func TestSimpleDNSHostProviderReconnect(t *testing.T) {
+	t.Parallel()
 	ts, err := StartTestCluster(t, 3, nil, logWriter{t: t, p: "[ZKERR] "})
 	if err != nil {
 		t.Fatal(err)
